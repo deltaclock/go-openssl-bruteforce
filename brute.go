@@ -13,6 +13,12 @@ import (
 	"sync"
 )
 
+type results struct {
+	password string
+	cipher   string
+	fileName string
+}
+
 func getAllCiphers() []string {
 	out, err := exec.Command("openssl", "enc", "-ciphers").Output()
 	if err != nil {
@@ -45,9 +51,11 @@ func argParse() (string, string, []string) {
 		os.Exit(1)
 	}
 
-	ciphersSlice := getAllCiphers()
+	var ciphersSlice []string
 	if *ciphers != "All openssl ciphers" {
 		ciphersSlice = strings.Split(*ciphers, ",")
+	} else {
+		ciphersSlice = getAllCiphers()
 	}
 	return *wordlistPath, *encFile, ciphersSlice
 }
@@ -63,9 +71,18 @@ func printAllCiphers() {
 	fmt.Println()
 }
 
-func crack(cipher string, encFile string, wordlistPath string, wg *sync.WaitGroup, found chan<- string, stop <-chan bool) {
+func printResults(info results) {
+	fmt.Println(strings.Repeat("-", 50))
+	fmt.Printf("Found password [ %s ] using [ %s ] algorithm!!\n", info.password, info.cipher)
+	fmt.Println(strings.Repeat("-", 50))
+
+	data, _ := ioutil.ReadFile(info.fileName)
+	fmt.Println(string(data))
+	fmt.Println(strings.Repeat("-", 50))
+}
+
+func crack(cipher string, encFile string, wordlistPath string, wg *sync.WaitGroup, found chan<- results, stop <-chan bool) {
 	defer wg.Done()
-	fmt.Printf("Trying cipher %s\n", cipher)
 	cmdFormat := "openssl enc -d -a -%s -in %s -out %s -pass pass:%s"
 	fileName := "result-" + cipher
 	// read big file
@@ -80,22 +97,15 @@ func crack(cipher string, encFile string, wordlistPath string, wg *sync.WaitGrou
 	for scanner.Scan() {
 		select {
 		case <-stop:
-			fmt.Printf("Stopping worker: %s\n", cipher)
 			return
 		default:
 			word := scanner.Text()
 			cmd := fmt.Sprintf(cmdFormat, cipher, encFile, fileName, word)
 			command := strings.Split(cmd, " ")
 			_, err := exec.Command(command[0], command[1:]...).Output()
-			// if no errors => found correct pass
+			// if no errors and file is ascii => found correct pass
 			if err == nil && isASCIITextFile(fileName) {
-				fmt.Println(strings.Repeat("-", 50))
-				fmt.Printf("Found password [ %s ] using [ %s ] algorithm!!\n", word, cipher)
-				fmt.Println(strings.Repeat("-", 50))
-				data, _ := ioutil.ReadFile(fileName)
-				fmt.Println(string(data))
-				fmt.Println(strings.Repeat("-", 50))
-				found <- fileName
+				found <- results{word, cipher, fileName}
 				return
 			}
 		}
@@ -107,7 +117,7 @@ func watcher(wg *sync.WaitGroup, watch chan<- bool) {
 	wg.Wait()
 }
 
-func removeJunkFiles(goodFile string) {
+func removeJunkExcept(goodFile string) {
 	files, err := ioutil.ReadDir("./")
 	if err != nil {
 		panic(err)
@@ -148,9 +158,10 @@ func isASCIITextFile(filePath string) bool {
 
 func main() {
 	wordlist, encryptedFile, ciphers := argParse()
+	println("Bruteforcing Started")
+	var info results
 	alreadyFound := false
-	resultFile := ""
-	found := make(chan string)
+	found := make(chan results)
 	stop := make(chan bool)
 	watch := make(chan bool)
 
@@ -165,9 +176,8 @@ Waiting:
 	for {
 		select {
 		case <-watch:
-			fmt.Println("All Workers Closed")
 			break Waiting
-		case resultFile = <-found:
+		case info = <-found:
 			if !alreadyFound {
 				alreadyFound = true
 				close(stop)
@@ -175,9 +185,10 @@ Waiting:
 		}
 	}
 	if alreadyFound {
-		fmt.Printf("CRACKED!! Results in file [ %s ]", resultFile)
+		fmt.Printf("CRACKED!! Results in file [ %s ]\n", info.fileName)
+		printResults(info)
+	} else {
+		fmt.Println("Couldnt crack that file")
 	}
-
-	fmt.Println("Program Exit")
-	removeJunkFiles(resultFile)
+	removeJunkExcept(info.fileName)
 }
