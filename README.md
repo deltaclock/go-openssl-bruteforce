@@ -20,7 +20,7 @@ $ ./openssl-brute
     	Wordlist to use. (default "/usr/share/wordlists/rockyou.txt")
 ```
 
-Compiled versions on the release tab.
+**Compiled versions on the release tab.** [here](https://github.com/deltaclock/go-openssl-bruteforce/releases)
 
 ## Build from source
 ```
