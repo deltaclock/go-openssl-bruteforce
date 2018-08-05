@@ -6,6 +6,7 @@ A fast multi-threaded tool to bruteforce openssl ciphers with a wordlist against
 ```
 ./openssl-brute -file <encrypted file>
 ```
+Needs to be in base64 (will be fixed later).
 
 ### All options
 ```
